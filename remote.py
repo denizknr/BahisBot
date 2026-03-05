@@ -389,6 +389,10 @@ MARKET_RENK = {
 }
 
 # ── SOL PANEL ─────────────────────────────────────────────────────────────────
+# Varsayılan değerler — sidebar render olmadan önce NameError engellemek için
+tutar    = 100
+target_o = 1.44
+
 with st.sidebar:
     st.markdown("### ⚙️ Ayarlar")
     mod   = st.radio("Arama Modu", ["Finansal Hedef", "Doğrudan Oran"], horizontal=True)
