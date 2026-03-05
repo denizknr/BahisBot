@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 ODDS_API_KEY     = "cdf9790dbd2d52e5d593e5e4b9a76118"
 FOOTBALL_API_KEY = "c09318cad2ff47f92f8468f48dc64f72"
 FOOTBALL_HOST    = "https://v3.football.api-sports.io"
-HEADERS_FB       = {"x-apisports-key": FOOTBALL_API_KEY}
+HEADERS_FB       = {"x-apisports-key": c09318cad2ff47f92f8468f48dc64f72}
 
 st.set_page_config(page_title="Scout v33", layout="wide", page_icon="⚡", initial_sidebar_state="collapsed")
 
@@ -570,42 +570,82 @@ def analiz_motoru(secili_lig_keys: list, gun_aralik: int, secili_marketler: list
 
     df = (pd.DataFrame(firsatlar)
             .sort_values("dt_sort")
-            .drop_duplicates(subset=["H","A","Market","Tahmin"])
-            .head(25)
+            .drop_duplicates(subset=["H","A","Market","Tahmin"])   # aynı bahisi tekrar alma
             .reset_index(drop=True))
 
-    gun_label = "Bugün" if gun_aralik == 1 else f"Sonraki {gun_aralik} gün"
-    st.success(f"✅ **{len(df)} fırsat** · {gun_label} · Oran: {alt_l:.2f}–{ust_l:.2f} · {len(secili_lig_keys)} lig tarandı")
+    # Maç başına grupla — her maç tek kart
+    mac_gruplari = {}
+    for _, r in df.iterrows():
+        key = (r["H"], r["A"])
+        if key not in mac_gruplari:
+            mac_gruplari[key] = {
+                "Tarih":   r["Tarih"],
+                "Saat":    r["Saat"],
+                "dt_sort": r["dt_sort"],
+                "Lig":     r["Lig"],
+                "OddsLig": r["OddsLig"],
+                "bahisler": []
+            }
+        mac_gruplari[key]["bahisler"].append({
+            "Market": r["Market"],
+            "Tahmin": r["Tahmin"],
+            "Oran":   r["Oran"],
+        })
 
-    for i, r in df.iterrows():
-        mkt_renk = MARKET_RENK.get(r['Market'], "#3d7eff")
+    # Zamana göre sırala, max 20 maç
+    sirali = sorted(mac_gruplari.items(), key=lambda x: x[1]["dt_sort"])[:20]
+
+    gun_label = "Bugün" if gun_aralik == 1 else f"Sonraki {gun_aralik} gün"
+    st.success(f"✅ **{len(sirali)} maç** · {gun_label} · Oran: {alt_l:.2f}–{ust_l:.2f} · {len(secili_lig_keys)} lig tarandı")
+
+    for mac_idx, ((ev, dep), mac) in enumerate(sirali):
+        bahisler = mac["bahisler"]
+
+        # Bahis badge'leri HTML
+        badge_html = ""
+        for b in bahisler:
+            renk = MARKET_RENK.get(b["Market"], "#3d7eff")
+            badge_html += f"""
+            <span class='badge b-market' style='border:1px solid {renk}40;color:{renk}'>{b['Market']}</span>
+            <span class='badge b-tahmin'>🎯 {b['Tahmin']}</span>
+            <span class='badge b-oran'>📈 {b['Oran']}</span>
+            &nbsp;
+            """
 
         st.markdown(f"""
-        <div class='match-card' style='border-left-color:{mkt_renk}'>
-          <div class='match-header'>{r['H']} <span style='color:#555d75'>vs</span> {r['A']}</div>
-          <div class='match-meta'>📅 {r['Tarih']} &nbsp;🕐 {r['Saat']} &nbsp;·&nbsp; 🏆 {r['Lig']}</div>
-          <span class='badge b-market' style='border:1px solid {mkt_renk}30'>{r['Market']}</span>
-          <span class='badge b-tahmin'>🎯 {r['Tahmin']}</span>
-          <span class='badge b-oran'>📈 {r['Oran']}</span>
+        <div class='match-card'>
+          <div class='match-header'>{ev} <span style='color:#555d75'>vs</span> {dep}</div>
+          <div class='match-meta'>📅 {mac['Tarih']} &nbsp;🕐 {mac['Saat']} &nbsp;·&nbsp; 🏆 {mac['Lig']}</div>
+          <div style='margin-top:6px;line-height:2.2'>{badge_html}</div>
         </div>
         """, unsafe_allow_html=True)
 
-        col_exp, col_btn = st.columns([5, 1])
+        # İstatistik expander + bahis butonları yan yana
+        col_exp, col_btns = st.columns([4, 2])
+
         with col_exp:
             with st.expander("📊 Takım İstatistikleri"):
-                fb_lig_id, fb_sezon = LIG_MAP.get(r['OddsLig'], (None, 2024))
+                fb_lig_id, fb_sezon = LIG_MAP.get(mac["OddsLig"], (None, 2024))
                 if fb_lig_id:
                     with st.spinner("Veri yükleniyor..."):
-                        st.markdown(istatistik_html(r['H'], r['A'], fb_lig_id, fb_sezon), unsafe_allow_html=True)
+                        st.markdown(istatistik_html(ev, dep, fb_lig_id, fb_sezon), unsafe_allow_html=True)
                 else:
                     st.caption("Bu lig için istatistik verisi mevcut değil.")
-        with col_btn:
-            st.button("➕", key=f"btn_{i}",
-                      on_click=mac_ekle,
-                      args=(f"{r['H']}-{r['A']}", f"{r['Market']}: {r['Tahmin']}", r['Oran']),
-                      use_container_width=True, help="Kupona ekle")
 
-        st.markdown("<hr style='border-color:#1e2235;margin:3px 0 9px'>", unsafe_allow_html=True)
+        with col_btns:
+            st.markdown("<div style='padding-top:4px'>", unsafe_allow_html=True)
+            for b_idx, b in enumerate(bahisler):
+                btn_label = f"➕ {b['Market']} · {b['Oran']}"
+                st.button(
+                    btn_label,
+                    key=f"btn_{mac_idx}_{b_idx}",
+                    on_click=mac_ekle,
+                    args=(f"{ev}-{dep}", f"{b['Market']}: {b['Tahmin']}", b['Oran']),
+                    use_container_width=True,
+                )
+            st.markdown("</div>", unsafe_allow_html=True)
+
+        st.markdown("<hr style='border-color:#1e2235;margin:3px 0 10px'>", unsafe_allow_html=True)
 
 # ── SEKMELER ──────────────────────────────────────────────────────────────────
 tab1, tab2 = st.tabs(["🔍 Analiz", "📂 Arşiv"])
