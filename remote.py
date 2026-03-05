@@ -3,7 +3,7 @@ import requests
 import pandas as pd
 
 # API anahtarını buraya tırnak içine yaz
-API_KEY = "BURAYA_API_ANAHTARINI_YAPISTIR"
+API_KEY = "cdf9790dbd2d52e5d593e5e4b9a76118"
 
 st.set_page_config(page_title="Bet Strategy Bot", page_icon="⚽")
 
@@ -57,3 +57,4 @@ if st.button("Sanal Kupon Oluştur"):
                 st.warning("Bu kriterlerde yeterli maç bulunamadı. Hedef kazancı düşürmeyi deneyin.")
         else:
             st.error("Veri çekilemedi. API anahtarınızı veya limitinizi kontrol edin.")
+
