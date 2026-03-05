@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 import hashlib
 
 # ── API ANAHTARI ──────────────────────────────────────────────────────────────
-API_KEY = "cdf9790dbd2d52e5d593e5e4b9a76118"
+API_KEY = "c09318cad2ff47f92f8468f48dc64f72"
 
 st.set_page_config(page_title="Scout v31", layout="wide", page_icon="⚡", initial_sidebar_state="collapsed")
 
@@ -368,3 +368,4 @@ with tab2:
                 if cb.button("❌ Kaybetti", key=f"kay_{idx}"): st.session_state.arsiv[idx]['durum'] = "Kaybetti"; st.rerun()
     else:
         st.info("Henüz kaydedilmiş kupon yok.")
+
