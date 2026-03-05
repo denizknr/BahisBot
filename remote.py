@@ -3,7 +3,7 @@ import requests
 import pandas as pd
 
 # API anahtarını buraya ekle
-API_KEY = "SENİN_API_ANAHTARIN"
+API_KEY = "cdf9790dbd2d52e5d593e5e4b9a76118"
 
 st.set_page_config(page_title="Global Multi-Market Analiz", layout="wide")
 
@@ -112,3 +112,4 @@ with tab_b:
     b_key = [l['key'] for l in ligler['Basketbol'] if l['name'] == secili_lig_b][0]
     if st.button("Basketbol Marketlerini Tara"):
         analiz_et(b_key)
+
