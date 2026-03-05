@@ -314,13 +314,6 @@ MARKET_RENK = {
     "Handikap": "#00cec9",
 }
 
-# ── ZAMAN FİLTRESİ ────────────────────────────────────────────────────────────
-def zaman_aralik(gun_secim):
-    """Seçilen gün sayısına göre UTC başlangıç/bitiş döndür"""
-    simdi  = datetime.now(timezone.utc)
-    bitis  = simdi + timedelta(days=gun_secim)
-    return simdi, bitis
-
 # ── SOL PANEL ─────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("### ⚙️ Ayarlar")
@@ -363,87 +356,152 @@ with st.sidebar:
 st.title("⚡ Superior Scout v33")
 st.caption(f"Hedef oran: **{target_o:.2f}** · Tutar: **{tutar} TL**")
 
+if ODDS_API_KEY == "SENİN_ODDS_API_ANAHTARIN":
+    st.error("⚠️ Odds API anahtarı girilmemiş! Dosyanın 7. satırındaki ODDS_API_KEY değişkenine the-odds-api.com anahtarını gir.")
+
 # ── ANALİZ MOTORU ─────────────────────────────────────────────────────────────
 def analiz_motoru(secili_lig_keys: list, gun_aralik: int, secili_marketler: list):
     if not secili_lig_keys:
         st.warning("Lütfen en az bir lig seçin.")
         return
 
-    alt_l, ust_l = target_o * 0.90, target_o * 1.10
-    baslangic, bitis = zaman_aralik(gun_aralik)
+    # Oran aralığı — ±20% (daha geniş, daha fazla maç bulunur)
+    alt_l = target_o * 0.80
+    ust_l = target_o * 1.20
 
-    # The Odds API market parametresi
-    market_param_map = {
-        "Maç Sonu": "h2h",
-        "Alt/Üst":  "totals",
-        "Korner":   "alternate_totals",   # bazı bookmaker'larda corners
-        "Kart":     "player_cards",
-    }
-    odds_markets = list({market_param_map[m] for m in secili_marketler if m in market_param_map})
-    if not odds_markets: odds_markets = ["h2h", "totals"]
-    markets_str = ",".join(odds_markets)
+    # Zaman sınırı (UTC)
+    simdi = datetime.now(timezone.utc)
+    bitis = simdi + timedelta(days=gun_aralik)
+
+    # The Odds API'de her zaman h2h + totals çek, korner için ayrı istek
+    temel_markets   = []
+    korner_istendi  = "Korner"   in secili_marketler
+    kart_istendi    = "Kart"     in secili_marketler
+    mac_sonu_ist    = "Maç Sonu" in secili_marketler
+    alt_ust_ist     = "Alt/Üst"  in secili_marketler
+
+    if mac_sonu_ist: temel_markets.append("h2h")
+    if alt_ust_ist:  temel_markets.append("totals")
+    if not temel_markets: temel_markets = ["h2h", "totals"]   # hiç seçilmezse default
 
     firsatlar = []
+    api_hata  = []
+    toplam_mac = 0
     prog = st.progress(0, text="⏳ Piyasalar taranıyor...")
 
     for i, lig_key in enumerate(secili_lig_keys):
-        prog.progress((i+1)/len(secili_lig_keys), text=f"⏳ {lig_key.split('_',1)[-1].replace('_',' ').title()} taranıyor...")
-        url = (f"https://api.the-odds-api.com/v4/sports/{lig_key}/odds/"
-               f"?apiKey={ODDS_API_KEY}&regions=eu&markets={markets_str}&oddsFormat=decimal")
-        try:
-            res = requests.get(url, timeout=10)
-            if res.status_code != 200: continue
+        prog.progress((i+1)/len(secili_lig_keys),
+                      text=f"⏳ {lig_key.replace('soccer_','').replace('_',' ').title()} ({i+1}/{len(secili_lig_keys)})")
 
-            for m in res.json():
-                # Zaman filtresi
-                dt_utc = datetime.strptime(m['commence_time'], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
-                if not (baslangic <= dt_utc <= bitis): continue
+        # ── 1. Temel market isteği (h2h + totals) ────────────────────────────
+        def fetch_market(lig, mkts):
+            url = (f"https://api.the-odds-api.com/v4/sports/{lig}/odds/"
+                   f"?apiKey={ODDS_API_KEY}&regions=eu"
+                   f"&markets={','.join(mkts)}&oddsFormat=decimal")
+            try:
+                r = requests.get(url, timeout=12)
+                if r.status_code == 200:
+                    return r.json()
+                elif r.status_code == 422:
+                    return []   # bu lig bu marketi desteklemiyor
+                else:
+                    api_hata.append(f"{lig}: HTTP {r.status_code}")
+                    return []
+            except Exception as e:
+                api_hata.append(f"{lig}: {str(e)[:40]}")
+                return []
 
+        maclar = fetch_market(lig_key, temel_markets)
+
+        # ── 2. Korner marketi — ayrı istek ───────────────────────────────────
+        korner_maclar = []
+        if korner_istendi:
+            # The Odds API'de korner: "alternate_totals" veya "team_totals"
+            for korner_market in ["alternate_totals", "team_totals"]:
+                km = fetch_market(lig_key, [korner_market])
+                if km:
+                    korner_maclar = km
+                    break
+
+        for mac_grup, kaynak in [(maclar, "normal"), (korner_maclar, "korner")]:
+            for m in mac_grup:
+                try:
+                    dt_utc = datetime.strptime(
+                        m['commence_time'], "%Y-%m-%dT%H:%M:%SZ"
+                    ).replace(tzinfo=timezone.utc)
+                except Exception:
+                    continue
+
+                # Zaman filtresi: sadece gelecekteki ve bitis'ten önce
+                if dt_utc < simdi or dt_utc > bitis:
+                    continue
+
+                toplam_mac += 1
                 dt_tr = dt_utc + timedelta(hours=3)
 
-                for bm in m['bookmakers'][:2]:      # ilk 2 bookmaker
-                    for mkt in bm['markets']:
+                for bm in m.get('bookmakers', [])[:3]:
+                    for mkt in bm.get('markets', []):
                         mkt_key = mkt['key']
-                        for out in mkt['outcomes']:
-                            price = out['price']
-                            if not (alt_l <= price <= ust_l): continue
+
+                        for out in mkt.get('outcomes', []):
+                            price = out.get('price', 0)
+                            if not (alt_l <= price <= ust_l):
+                                continue
 
                             point = out.get('point')
                             tahmin_str, market_label = market_etiket(mkt_key, out['name'], point)
 
-                            # Sadece seçili marketler
-                            if market_label not in secili_marketler and "Tümü" not in secili_marketler:
+                            # Market filtresi
+                            if market_label == "Korner" and not korner_istendi:
+                                continue
+                            if market_label == "Kart" and not kart_istendi:
+                                continue
+                            if market_label == "Maç Sonu" and not mac_sonu_ist:
+                                continue
+                            if market_label == "Alt/Üst" and not alt_ust_ist:
                                 continue
 
                             firsatlar.append({
-                                "Tarih":    dt_tr.strftime("%d %b"),
-                                "Saat":     dt_tr.strftime("%H:%M"),
-                                "dt_sort":  dt_utc,
-                                "H":        m['home_team'],
-                                "A":        m['away_team'],
-                                "Lig":      m['sport_title'],
-                                "OddsLig":  lig_key,
-                                "Market":   market_label,
-                                "Tahmin":   tahmin_str,
-                                "Oran":     price,
+                                "Tarih":   dt_tr.strftime("%d %b"),
+                                "Saat":    dt_tr.strftime("%H:%M"),
+                                "dt_sort": dt_utc,
+                                "H":       m['home_team'],
+                                "A":       m['away_team'],
+                                "Lig":     m['sport_title'],
+                                "OddsLig": lig_key,
+                                "Market":  market_label,
+                                "Tahmin":  tahmin_str,
+                                "Oran":    price,
                             })
-        except Exception:
-            continue
 
     prog.empty()
 
+    # Debug bilgisi
+    if api_hata:
+        with st.expander(f"⚠️ {len(api_hata)} API uyarısı"):
+            for h in api_hata[:10]: st.caption(h)
+
     if not firsatlar:
-        st.warning("Seçilen filtrelerde maç bulunamadı. Oran aralığını veya lig seçimini genişletin.")
+        st.error(f"""❌ Hiç fırsat bulunamadı.
+        
+**Olası sebepler:**
+- Odds API anahtarın `SENİN_ODDS_API_ANAHTARIN` olarak kalmış — gerçek anahtarı gir
+- Seçilen {len(secili_lig_keys)} ligde şu an aktif maç yok
+- Oran kriteri ({alt_l:.2f}–{ust_l:.2f}) bu liglere uymuyor
+- Tarama yapılan {gun_aralik} günde maç programlanmamış
+
+**Deneyebileceklerin:** Oran aralığını genişlet, daha fazla lig seç, 3 gün seç.""")
+        st.info(f"📊 Toplam taranan maç sayısı: **{toplam_mac}** (zaman filtresine uyanlar)")
         return
 
     df = (pd.DataFrame(firsatlar)
             .sort_values("dt_sort")
             .drop_duplicates(subset=["H","A","Market","Tahmin"])
-            .head(20)
+            .head(25)
             .reset_index(drop=True))
 
     gun_label = "Bugün" if gun_aralik == 1 else f"Sonraki {gun_aralik} gün"
-    st.caption(f"**{len(df)} fırsat** · {gun_label} · Oran: {alt_l:.2f}–{ust_l:.2f} · {len(secili_lig_keys)} lig")
+    st.success(f"✅ **{len(df)} fırsat** · {gun_label} · Oran: {alt_l:.2f}–{ust_l:.2f} · {len(secili_lig_keys)} lig tarandı")
 
     for i, r in df.iterrows():
         mkt_renk = MARKET_RENK.get(r['Market'], "#3d7eff")
