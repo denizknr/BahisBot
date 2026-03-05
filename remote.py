@@ -164,70 +164,138 @@ LIG_MAP = {
 }
 
 # ── API-FOOTBALL FONKSİYONLARI ────────────────────────────────────────────────
+
+def _fb_get(endpoint, params, timeout=10):
+    """Tek nokta API çağrısı — hata durumunda (status, json) döner"""
+    try:
+        r = requests.get(f"{FOOTBALL_HOST}/{endpoint}", headers=HEADERS_FB,
+                         params=params, timeout=timeout)
+        return r.status_code, r.json()
+    except Exception as e:
+        return 0, {"errors": str(e)}
+
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_standings(league_id, season):
-    r = requests.get(f"{FOOTBALL_HOST}/standings", headers=HEADERS_FB,
-                     params={"league": league_id, "season": season}, timeout=10)
+    """
+    Lig tablosunu çek. Önce verilen sezonu dene, başarısız olursa
+    bir önceki sezonu (season-1) dene — bazı ligler henüz yeni sezonu
+    API'ye yüklememiş olabilir.
+    """
     out = {}
-    if r.status_code != 200: return out
-    try:
-        for s in r.json()["response"][0]["league"]["standings"][0]:
-            tid = s["team"]["id"]
-            played = s["all"]["played"] or 1
-            out[tid] = {
-                "siralama": s["rank"], "puan": s["points"],
-                "takim_adi": s["team"]["name"],
-                "galibiyet": s["all"]["win"],
-                "beraberlik": s["all"]["draw"],
-                "maglubiyet": s["all"]["lose"],
-                "gol_a": round(s["all"]["goals"]["for"] / played, 2),
-                "gol_y": round(s["all"]["goals"]["against"] / played, 2),
-            }
-    except Exception: pass
+    for s in [season, season - 1]:
+        code, data = _fb_get("standings", {"league": league_id, "season": s})
+        if code != 200 or not data.get("response"):
+            continue
+        try:
+            # Bazı ligler grup bazlı gelir → standings bir liste listesi
+            # Tüm grupları düzleştir
+            all_groups = data["response"][0]["league"]["standings"]
+            teams_flat = []
+            for group in all_groups:
+                if isinstance(group, list):
+                    teams_flat.extend(group)
+                else:
+                    teams_flat.append(group)
+
+            for s_row in teams_flat:
+                tid    = s_row["team"]["id"]
+                played = s_row["all"]["played"] or 1
+                out[tid] = {
+                    "siralama":   s_row["rank"],
+                    "puan":       s_row["points"],
+                    "takim_adi":  s_row["team"]["name"],
+                    "galibiyet":  s_row["all"]["win"],
+                    "beraberlik": s_row["all"]["draw"],
+                    "maglubiyet": s_row["all"]["lose"],
+                    "gol_a": round(s_row["all"]["goals"]["for"]     / played, 2),
+                    "gol_y": round(s_row["all"]["goals"]["against"] / played, 2),
+                    "sezon": s,
+                }
+            if out:
+                return out   # başarılı → döndür
+        except Exception:
+            continue
     return out
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_team_id(takim_adi, league_id, season):
+    """
+    Takım adından API-Football team_id bul.
+    1) Standings'te kısmi eşleşme ara
+    2) /teams search endpoint'ini dene
+    3) Takım adından kelimeleri bölerek tekrar dene
+    """
     st_data = get_standings(league_id, season)
+
+    # Normalize et
+    def norm(s): return s.lower().replace("fc ", "").replace(" fc","").replace("1. ", "").strip()
+    adi_n = norm(takim_adi)
+
     for tid, info in st_data.items():
-        a = takim_adi.lower(); b = info["takim_adi"].lower()
-        if a in b or b in a: return tid
-    r = requests.get(f"{FOOTBALL_HOST}/teams", headers=HEADERS_FB,
-                     params={"name": takim_adi, "league": league_id, "season": season}, timeout=8)
-    if r.status_code == 200:
-        resp = r.json().get("response", [])
-        if resp: return resp[0]["team"]["id"]
+        b = norm(info["takim_adi"])
+        if adi_n in b or b in adi_n:
+            return tid
+
+    # /teams search
+    for search_name in [takim_adi, takim_adi.split()[0]]:
+        code, data = _fb_get("teams", {"name": search_name, "league": league_id, "season": season})
+        if code == 200:
+            resp = data.get("response", [])
+            if resp:
+                return resp[0]["team"]["id"]
     return None
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_team_stats(team_id, league_id, season):
-    r = requests.get(f"{FOOTBALL_HOST}/teams/statistics", headers=HEADERS_FB,
-                     params={"team": team_id, "league": league_id, "season": season}, timeout=10)
     bos = {"sari": None, "kirmizi": None}
-    if r.status_code != 200: return bos
-    try:
-        d = r.json()["response"]
-        oyun = d["fixtures"]["played"]["total"] or 1
-        sari = sum((d["cards"]["yellow"].get(str(i), {}) or {}).get("total", 0) or 0 for i in range(0, 120, 15))
-        kir  = sum((d["cards"]["red"].get(str(i), {})    or {}).get("total", 0) or 0 for i in range(0, 120, 15))
-        return {"sari": round(sari/oyun, 2), "kirmizi": round(kir/oyun, 2)}
-    except Exception: return bos
+    for s in [season, season - 1]:
+        code, data = _fb_get("teams/statistics",
+                             {"team": team_id, "league": league_id, "season": s})
+        if code != 200 or not data.get("response"):
+            continue
+        try:
+            d    = data["response"]
+            oyun = d["fixtures"]["played"]["total"] or 1
+            sari = sum(
+                (d["cards"]["yellow"].get(str(i), {}) or {}).get("total", 0) or 0
+                for i in range(0, 120, 15)
+            )
+            kir = sum(
+                (d["cards"]["red"].get(str(i), {}) or {}).get("total", 0) or 0
+                for i in range(0, 120, 15)
+            )
+            return {"sari": round(sari / oyun, 2), "kirmizi": round(kir / oyun, 2)}
+        except Exception:
+            continue
+    return bos
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_last5_form(team_id, league_id, season):
-    r = requests.get(f"{FOOTBALL_HOST}/fixtures", headers=HEADERS_FB,
-                     params={"team": team_id, "league": league_id, "season": season,
-                             "last": 5, "status": "FT"}, timeout=10)
+    """
+    Son 5 maç formunu çek.
+    Önce lig filtreli dene, boş gelirse tüm liglerde dene.
+    """
     form = []
-    if r.status_code != 200: return form
-    try:
-        for fix in r.json()["response"]:
-            ev_mi = fix["teams"]["home"]["id"] == team_id
-            ga = fix["goals"]["home"] if ev_mi else fix["goals"]["away"]
-            gy = fix["goals"]["away"] if ev_mi else fix["goals"]["home"]
-            if ga is None or gy is None: continue
-            form.append("G" if ga > gy else ("B" if ga == gy else "M"))
-    except Exception: pass
+    param_sets = [
+        {"team": team_id, "league": league_id, "season": season, "last": 5, "status": "FT"},
+        {"team": team_id, "last": 5, "status": "FT"},   # lig filtresi olmadan
+    ]
+    for params in param_sets:
+        code, data = _fb_get("fixtures", params)
+        if code != 200: continue
+        try:
+            fixtures = data.get("response", [])
+            if not fixtures: continue
+            form = []
+            for fix in fixtures:
+                ev_mi = fix["teams"]["home"]["id"] == team_id
+                ga = fix["goals"]["home"] if ev_mi else fix["goals"]["away"]
+                gy = fix["goals"]["away"] if ev_mi else fix["goals"]["home"]
+                if ga is None or gy is None: continue
+                form.append("G" if ga > gy else ("B" if ga == gy else "M"))
+            if form: return form
+        except Exception:
+            continue
     return form
 
 # ── YARDIMCI ─────────────────────────────────────────────────────────────────
@@ -246,16 +314,21 @@ def istatistik_html(ev, dep, league_id, season):
     st_data  = get_standings(league_id, season)
     ev_id    = get_team_id(ev,  league_id, season)
     dep_id   = get_team_id(dep, league_id, season)
-    ev_s     = st_data.get(ev_id,  {})
-    dep_s    = st_data.get(dep_id, {})
-    ev_stat  = get_team_stats(ev_id,  league_id, season) if ev_id  else {}
+    ev_s     = st_data.get(ev_id,  {}) if ev_id else {}
+    dep_s    = st_data.get(dep_id, {}) if dep_id else {}
+    ev_stat  = get_team_stats(ev_id,  league_id, season) if ev_id else {}
     dep_stat = get_team_stats(dep_id, league_id, season) if dep_id else {}
-    ev_form  = get_last5_form(ev_id,  league_id, season) if ev_id  else []
+    ev_form  = get_last5_form(ev_id,  league_id, season) if ev_id else []
     dep_form = get_last5_form(dep_id, league_id, season) if dep_id else []
 
-    ev_ga = ev_s.get("gol_a"); dep_ga = dep_s.get("gol_a")
-    ev_gy = ev_s.get("gol_y"); dep_gy = dep_s.get("gol_y")
-    ev_sr = ev_s.get("siralama"); dep_sr = dep_s.get("siralama")
+    ev_ga  = ev_s.get("gol_a");  dep_ga  = dep_s.get("gol_a")
+    ev_gy  = ev_s.get("gol_y");  dep_gy  = dep_s.get("gol_y")
+    ev_sr  = ev_s.get("siralama"); dep_sr = dep_s.get("siralama")
+
+    # Standings verisi gelmediyse hangi sezon denendi göster
+    sezon_notu = ""
+    if not ev_s and not dep_s:
+        sezon_notu = f"<div style='font-size:.72rem;color:#ff9f43;margin-top:6px;'>⚠️ Lig tablosu verisi alınamadı (league_id={league_id}, season={season}). API kotanızı veya lig ID'sini kontrol edin.</div>"
 
     return f"""
 <div class='stat-section'>
@@ -270,23 +343,24 @@ def istatistik_html(ev, dep, league_id, season):
         <td>{f"{ev_s.get('galibiyet','—')}/{ev_s.get('beraberlik','—')}/{ev_s.get('maglubiyet','—')}" if ev_s else "—"}</td>
         <td>{f"{dep_s.get('galibiyet','—')}/{dep_s.get('beraberlik','—')}/{dep_s.get('maglubiyet','—')}" if dep_s else "—"}</td></tr>
       <tr><td>Gol Ort. (A)</td>
-        <td class='{sv(ev_ga,1.8,1.2)}'>{fmt(ev_ga)}</td>
+        <td class='{sv(ev_ga, 1.8,1.2)}'>{fmt(ev_ga)}</td>
         <td class='{sv(dep_ga,1.8,1.2)}'>{fmt(dep_ga)}</td></tr>
       <tr><td>Gol Ort. (Y)</td>
-        <td class='{sv(ev_gy,0.9,1.4,ters=True)}'>{fmt(ev_gy)}</td>
+        <td class='{sv(ev_gy, 0.9,1.4,ters=True)}'>{fmt(ev_gy)}</td>
         <td class='{sv(dep_gy,0.9,1.4,ters=True)}'>{fmt(dep_gy)}</td></tr>
       <tr><td>Sarı Kart/Maç</td>
-        <td class='{sv(ev_stat.get("sari"),2.2,1.5,ters=True)}'>{fmt(ev_stat.get("sari"))}</td>
+        <td class='{sv(ev_stat.get("sari"), 2.2,1.5,ters=True)}'>{fmt(ev_stat.get("sari"))}</td>
         <td class='{sv(dep_stat.get("sari"),2.2,1.5,ters=True)}'>{fmt(dep_stat.get("sari"))}</td></tr>
       <tr><td>Kırmızı Kart/Maç</td>
-        <td class='{sv(ev_stat.get("kirmizi"),0.08,0.15,ters=True)}'>{fmt(ev_stat.get("kirmizi"))}</td>
+        <td class='{sv(ev_stat.get("kirmizi"), 0.08,0.15,ters=True)}'>{fmt(ev_stat.get("kirmizi"))}</td>
         <td class='{sv(dep_stat.get("kirmizi"),0.08,0.15,ters=True)}'>{fmt(dep_stat.get("kirmizi"))}</td></tr>
       <tr><td>Son 5 Maç</td>
         <td>{form_html(ev_form)}</td>
         <td>{form_html(dep_form)}</td></tr>
     </tbody>
   </table>
-  <div style='font-size:.7rem;color:#555d75;margin-top:5px'>✅ Gerçek veri: api-football v3 · 🔄 Cache: 1 saat</div>
+  {sezon_notu}
+  <div style='font-size:.7rem;color:#555d75;margin-top:4px'>✅ Kaynak: api-football v3 · 🔄 Cache: 1 saat</div>
 </div>"""
 
 # ── MARKET ETİKETİ ────────────────────────────────────────────────────────────
