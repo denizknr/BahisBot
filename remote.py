@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 ODDS_API_KEY     = "cdf9790dbd2d52e5d593e5e4b9a76118"
 FOOTBALL_API_KEY = "c09318cad2ff47f92f8468f48dc64f72"
 FOOTBALL_HOST    = "https://v3.football.api-sports.io"
-HEADERS_FB       = {"x-apisports-key": }
+HEADERS_FB       = {"x-apisports-key": c09318cad2ff47f92f8468f48dc64f72 }
 
 st.set_page_config(page_title="Scout v33", layout="wide", page_icon="⚡", initial_sidebar_state="collapsed")
 
@@ -755,4 +755,5 @@ with tab2:
                 if cb.button("❌ Kaybetti", key=f"kay_{idx}"): st.session_state.arsiv[idx]['durum']="Kaybetti"; st.rerun()
     else:
         st.info("Henüz kaydedilmiş kupon yok.")
+
 
