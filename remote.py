@@ -6,20 +6,21 @@ from datetime import datetime, timedelta
 # API ANAHTARINI BURAYA YAZ
 API_KEY = "cdf9790dbd2d52e5d593e5e4b9a76118"
 
-st.set_page_config(page_title="Superior Scout v10", layout="wide", page_icon="📈")
+st.set_page_config(page_title="Superior Scout v11", layout="wide", page_icon="📈")
 
-# CSS: Form ve Kart Tasarımı
+# CSS: Gelişmiş Kart ve Form Tasarımı
 st.markdown("""
     <style>
-    .match-card { background-color: #1e2130; padding: 20px; border-radius: 15px; border-left: 8px solid #4e73df; margin-bottom: 20px; }
-    .form-box { display: inline-block; width: 18px; height: 18px; border-radius: 3px; margin-right: 2px; text-align: center; color: white; font-size: 11px; font-weight: bold; line-height: 18px; }
+    .match-card { background-color: #1e2130; padding: 20px; border-radius: 15px; border-left: 8px solid #4e73df; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+    .form-container { display: flex; gap: 3px; margin-left: 10px; }
+    .f-box { width: 20px; height: 20px; border-radius: 4px; text-align: center; color: white; font-size: 12px; font-weight: bold; line-height: 20px; }
     .G { background-color: #28a745; } .B { background-color: #6c757d; } .M { background-color: #dc3545; }
-    .stat-link { background-color: #ff4b4b; color: white !important; padding: 8px 15px; border-radius: 8px; text-decoration: none; font-weight: bold; display: inline-block; margin-top: 10px; }
-    .success-text { font-weight: bold; color: #00ff00; }
+    .success-badge { background-color: #00ff00; color: #000; padding: 2px 8px; border-radius: 10px; font-weight: bold; font-size: 0.8em; }
+    .stat-btn { background-color: #ff4b4b; color: white !important; padding: 10px 20px; border-radius: 8px; text-decoration: none; font-weight: bold; display: inline-block; }
     </style>
     """, unsafe_allow_html=True)
 
-st.title("📈 Pro Scout v10: Akıllı Analiz ve Form Merkezi")
+st.title("📈 Pro Scout v11: Nihai Analiz Merkezi")
 
 with st.sidebar:
     st.header("⚙️ Arama Modu")
@@ -35,17 +36,13 @@ with st.sidebar:
         mac_sayisi = st.slider("Listelenecek Maç Sayısı", 1, 15, 5)
     
     st.divider()
-    st.info(f"Aranan Oran Aralığı: {ideal_o*0.9:.2f} - {ideal_o*1.1:.2f}")
+    st.info(f"Hedeflenen Oran: {ideal_o:.2f}")
 
-def form_html(seri):
-    html = "<div style='display:inline-block; margin-left:10px;'>"
-    for harf in seri:
-        html += f"<span class='form-box {harf}'>{harf}</span>"
-    html += "</div>"
-    return html
+def generate_form(seri):
+    return "".join([f"<span class='f-box {h}'>{h}</span>" for h in seri])
 
 def analiz_motoru(spor_list):
-    alt_l, ust_l = ideal_o * 0.9, ideal_o * 1.1
+    alt_l, ust_l = ideal_o * 0.85, ideal_o * 1.25 # Genişletilmiş aralık
     with st.spinner('Piyasa taranıyor...'):
         firsatlar = []
         for spor in spor_list:
@@ -60,8 +57,8 @@ def analiz_motoru(spor_list):
                                 if alt_l <= out['price'] <= ust_l:
                                     h, a = m['home_team'], m['away_team']
                                     basari = round((1/out['price']) * 100, 1)
-                                    # Form simülasyonu (Gerçek veri için ek API gerekir, görselleştirme amaçlıdır)
-                                    h_form, a_form = "GGBMG", "MBGGM" 
+                                    # Form simülasyonu
+                                    h_f, a_f = generate_form("GGBMG"), generate_form("MBGGM")
                                     
                                     tahmin = out['name']
                                     if mkt['key'] == "totals": tahmin = f"{out['name']} {out.get('point', '')} GOL"
@@ -69,36 +66,37 @@ def analiz_motoru(spor_list):
                                     firsatlar.append({
                                         "Saat": tr_saat,
                                         "Spor": "⚽" if "soccer" in m['sport_key'] else "🏀",
-                                        "Maç": f"{h} {form_html(h_form)} vs {a} {form_html(a_form)}",
+                                        "H": h, "A": a, "HF": h_f, "AF": a_f,
                                         "Tahmin": tahmin,
                                         "Oran": out['price'],
                                         "Basari": basari,
-                                        "Link": f"https://www.google.com/search?q={h.replace(' ', '+')}+vs+{a.replace(' ', '+')}+sofascore"
+                                        "Link": f"https://www.sofascore.com/search?q={h.replace(' ', '+')}+{a.replace(' ', '+')}"
                                     })
         
-        if len(firsatlar) >= 1:
-            df = pd.DataFrame(firsatlar).drop_duplicates(subset=['Maç']).head(mac_sayisi)
+        if firsatlar:
+            df = pd.DataFrame(firsatlar).drop_duplicates(subset=['H', 'A']).head(mac_sayisi)
             for _, r in df.iterrows():
                 st.markdown(f"""
                 <div class='match-card'>
-                    <div style='display: flex; justify-content: space-between;'>
-                        <span>📅 {r['Saat']} | {r['Spor']} {r['Maç']}</span>
-                        <span style='color: #00ff00; font-weight: bold; font-size: 1.2em;'>{r['Oran']}</span>
+                    <div style='display: flex; justify-content: space-between; align-items: center;'>
+                        <div style='font-size: 1.1em;'>
+                            📅 {r['Saat']} | {r['Spor']} <b>{r['H']}</b> {r['HF']} <span style='color:#666;'>vs</span> <b>{r['A']}</b> {r['AF']}
+                        </div>
+                        <div style='color: #00ff00; font-weight: bold; font-size: 1.3em;'>{r['Oran']}</div>
                     </div>
-                    <div style='margin-top: 10px;'>
-                        <span style='color: #ff4b4b; font-size: 1.1em;'>🎯 Tahmin: {r['Tahmin']}</span> | 
-                        <span class='success-text'>Güven: %{r['Basari']}</span>
-                    </div>
-                    <div style='text-align: right;'>
-                        <a href='{r['Link']}' target='_blank' class='stat-link'>📊 Analizi Gör</a>
+                    <div style='margin-top: 15px; display: flex; justify-content: space-between; align-items: center;'>
+                        <div>
+                            <span style='color: #ff4b4b; font-size: 1.1em; font-weight: bold;'>🎯 Tahmin: {r['Tahmin']}</span>
+                            <span class='success-badge'>%{r['Basari']} Güven</span>
+                        </div>
+                        <a href='{r['Link']}' target='_blank' class='stat-btn'>📊 SofaScore Verileri</a>
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
         else:
-            st.warning("Uygun maç bulunamadı. Kriterleri esnetin.")
+            st.warning("Uygun maç bulunamadı. Lütfen kriterleri esnetin.")
 
-# Ana Sekmeler
-tab1, tab2 = st.tabs(["🔍 Analiz Paneli", "📂 Arşiv"])
+tab1, tab2 = st.tabs(["🔍 Canlı Analiz", "📂 Arşiv"])
 with tab1:
     c1, c2, c3 = st.columns(3)
     if c1.button("⚽ FUTBOL"): analiz_motoru(["soccer"])
