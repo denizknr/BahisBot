@@ -1,105 +1,67 @@
 import streamlit as st
 import requests
 import pandas as pd
-from datetime import datetime
 
 # API anahtarını buraya ekle
 API_KEY = "cdf9790dbd2d52e5d593e5e4b9a76118"
 
-st.set_page_config(page_title="Superior All-in-One Analyzer", layout="wide")
+st.set_page_config(page_title="Superior Stable Analyzer", layout="wide")
 
-# Bellek Yönetimi
-if 'arsiv' not in st.session_state:
-    st.session_state.arsiv = []
+st.title("🚀 Kesin Sonuç Odaklı Analiz Sistemi")
 
-st.title("🏆 Profesyonel Çoklu Analiz ve Takip Sistemi")
-
-# Sol Panel Ayarları
 with st.sidebar:
-    st.header("📊 Strateji Merkezi")
+    st.header("📊 Strateji")
     tutar = st.number_input("Yatırılacak Tutar (TL)", min_value=10, value=100)
-    hedef = st.number_input("Hedef Kazanç (TL)", min_value=tutar, value=600)
-    mac_sayisi = st.slider("Maç Sayısı", 1, 6, 3)
+    hedef = st.number_input("Hedef Kazanç (TL)", min_value=tutar, value=350)
+    mac_sayisi = st.slider("Maç Sayısı", 1, 5, 2)
     
     st.divider()
-    marketler = st.multiselect("Market Seçimi", 
-                              ["h2h", "totals", "double_chance", "spreads"], 
-                              default=["h2h", "totals", "double_chance"])
-    st.caption("h2h: Taraf | totals: Alt-Üst | double_chance: 1x/x2")
+    st.warning("Not: Maç bulamazsa Hedef Kazancı artırın veya Maç Sayısını düşürün.")
 
-def analiz_motoru(spor_turleri):
+def stabil_analiz(spor_key):
+    # Hesaplama: Toleransı geniş tutuyoruz (1.20 - 2.50 arası her şeyi tara)
     oran_hedefi = hedef / tutar
     mac_basi_ideal = oran_hedefi ** (1/mac_sayisi)
-    alt_limit, ust_limit = 1.30, 2.10 # En verimli oran aralığı
-
-    tum_maclar = []
-    with st.spinner('Global marketler taranıyor...'):
-        for spor in spor_turleri:
-            m_str = ",".join(marketler)
-            # Tüm ligleri tara
-            url = f"https://api.the-odds-api.com/v4/sports/{spor}/odds/?apiKey={API_KEY}&regions=eu&markets={m_str}"
-            res = requests.get(url)
-            if res.status_code == 200:
-                for match in res.json():
-                    for bm in match['bookmakers'][:2]:
-                        for mkt in bm['markets']:
-                            for out in mkt['outcomes']:
-                                if alt_limit <= out['price'] <= ust_limit:
-                                    label = f"{out['name']} ({out.get('point', '')})" if 'point' in out else out['name']
-                                    tum_maclar.append({
-                                        "ID": match['id'],
-                                        "Spor": "⚽" if "soccer" in match['sport_key'] else "🏀",
-                                        "Lig": match['sport_title'],
-                                        "Maç": f"{match['home_team']} - {match['away_team']}",
-                                        "Tahmin": label,
-                                        "Oran": out['price'],
-                                        "Market": mkt['key']
-                                    })
+    
+    with st.spinner('Global bülten taranıyor...'):
+        # EN GARANTİ: Sadece h2h (Taraf) ve totals (Alt/Üst) tara
+        url = f"https://api.the-odds-api.com/v4/sports/{spor_key}/odds/?apiKey={API_KEY}&regions=eu&markets=h2h,totals&oddsFormat=decimal"
+        res = requests.get(url)
         
-        if len(tum_maclar) >= mac_sayisi:
-            df = pd.DataFrame(tum_maclar).drop_duplicates(subset=['Maç']).head(mac_sayisi * 2)
-            kupon = df.sample(mac_sayisi)
-            st.subheader("📋 Önerilen Karma Kupon")
-            st.table(kupon)
-            
-            t_oran = kupon['Oran'].prod()
-            st.success(f"Analiz Tamam! Toplam Oran: {t_oran:.2f} | Kazanç: {tutar * t_oran:.2f} TL")
-            
-            if st.button("📥 Kuponu Arşive Kaydet ve Takibe Al"):
-                st.session_state.arsiv.append({
-                    "tarih": datetime.now().strftime("%d/%m/%Y %H:%M"),
-                    "maclar": kupon.to_dict('records'),
-                    "oran": t_oran,
-                    "yatirilan": tutar,
-                    "durum": "Bekliyor"
-                })
-                st.toast("Kupon takibe alındı!")
+        if res.status_code == 200:
+            data = res.json()
+            if not data:
+                st.error("Bu ligde/sporda şu an aktif maç yok.")
+                return
+
+            secilenler = []
+            for match in data:
+                try:
+                    # En popüler büroyu seç (Genelde listenin başındaki)
+                    outcomes = match['bookmakers'][0]['markets'][0]['outcomes']
+                    for out in outcomes:
+                        # Geniş tolerans aralığı
+                        if (mac_basi_ideal * 0.7) <= out['price'] <= (mac_basi_ideal * 1.3):
+                            label = f"{out['name']} ({out.get('point', '')})" if 'point' in out else out['name']
+                            secilenler.append({
+                                "Lig": match['sport_title'],
+                                "Maç": f"{match['home_team']} - {match['away_team']}",
+                                "Tahmin": label,
+                                "Oran": out['price']
+                            })
+                            break
+                    if len(secilenler) >= mac_sayisi: break
+                except: continue
+
+            if len(secilenler) >= mac_sayisi:
+                df = pd.DataFrame(secilenler).head(mac_sayisi)
+                st.table(df)
+                st.success(f"Kupon Tamam! Toplam Oran: {df['Oran'].prod():.2f}")
+            else:
+                st.warning(f"Kriterlere uygun maç bulunamadı. Gereken oran: {mac_basi_ideal:.2f}")
         else:
-            st.warning("Kriterlere uygun yeterli maç bulunamadı.")
+            st.error("API Hatası! Anahtarınızı kontrol edin.")
 
-# Sekmeler
-tab1, tab2 = st.tabs(["🔍 Çoklu Analiz", "📂 Kupon Takip & Arşiv"])
-
-with tab1:
-    col1, col2, col3 = st.columns(3)
-    if col1.button("⚽ Sadece Futbol"): analiz_motoru(["soccer"])
-    if col2.button("🏀 Sadece Basketbol"): analiz_motoru(["basketball"])
-    if col3.button("🔥 KARMA ANALİZ (Futbol + Basket)"): analiz_motoru(["soccer", "basketball"])
-
-with tab2:
-    if not st.session_state.arsiv:
-        st.info("Henüz kaydedilmiş bir kupon yok.")
-    else:
-        for idx, k in enumerate(reversed(st.session_state.arsiv)):
-            with st.expander(f"📅 {k['tarih']} | Oran: {k['oran']:.2f} | Durum: {k['durum']}"):
-                st.table(pd.DataFrame(k['maclar']))
-                
-                c1, c2 = st.columns(2)
-                if c1.button(f"🔄 Sonuçları Sorgula", key=f"check_{idx}"):
-                    # Not: Ücretsiz API'da geçmiş sonuçlar kısıtlıdır, simüle ediyoruz
-                    st.write("Skorlar sorgulanıyor... (Global veri tabanına bağlanıldı)")
-                    st.info("Maçlar henüz sonuçlanmadı veya veri bekleniyor.")
-                
-                if c2.button(f"🗑️ Sil", key=f"del_{idx}"):
-                    st.session_state.arsiv.pop(-(idx+1))
-                    st.rerun()
+col1, col2 = st.columns(2)
+if col1.button("⚽ Futbol Dünyasını Tara"): stabil_analiz("soccer")
+if col2.button("🏀 Basketbol Dünyasını Tara"): stabil_analiz("basketball")
