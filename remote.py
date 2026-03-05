@@ -1,17 +1,18 @@
+# -*- coding: utf-8 -*-
 import streamlit as st
 import requests
 import pandas as pd
 from datetime import datetime, timedelta, timezone
 
-# ── API ANAHTARLARI ───────────────────────────────────────────────────────────
+# - API ANAHTARLARI -
 ODDS_API_KEY     = "cdf9790dbd2d52e5d593e5e4b9a76118"
 FOOTBALL_API_KEY = "c09318cad2ff47f92f8468f48dc64f72"
 FOOTBALL_HOST    = "https://v3.football.api-sports.io"
-HEADERS_FB       = {"x-apisports-key": c09318cad2ff47f92f8468f48dc64f72 }
+HEADERS_FB       = {"x-apisports-key": FOOTBALL_API_KEY}
 
 st.set_page_config(page_title="Scout v33", layout="wide", page_icon="⚡", initial_sidebar_state="collapsed")
 
-# ── SESSION STATE ─────────────────────────────────────────────────────────────
+# - SESSION STATE -
 for key in ['kupon_havuzu', 'arsiv']:
     if key not in st.session_state:
         st.session_state[key] = []
@@ -20,7 +21,7 @@ def mac_ekle(mac_adi, tahmin, oran):
     st.session_state.kupon_havuzu.append({"Maç": mac_adi, "Tahmin": tahmin, "Oran": oran})
     st.toast(f"✅ {mac_adi} eklendi!")
 
-# ── CSS ───────────────────────────────────────────────────────────────────────
+# - CSS -
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Inter:wght@400;500;600&display=swap');
@@ -68,9 +69,9 @@ div[data-testid="stToast"]{background:#1e3a1e!important;color:#4cff72!important}
 </style>
 """, unsafe_allow_html=True)
 
-# ── TÜM LİGLER (The Odds API sport keys) ─────────────────────────────────────
+# - TÜM LİGLER (The Odds API sport keys) -
 TUM_LIGLER = {
-    # ─ Avrupa ─
+    # - Avrupa -
     "🇹🇷 Türkiye Süper Lig":          "soccer_turkey_super_league",
     "🏴󠁧󠁢󠁥󠁮󠁧󠁿 İngiltere Premier League":  "soccer_epl",
     "🏴󠁧󠁢󠁥󠁮󠁧󠁿 İngiltere Championship":    "soccer_england_championship",
@@ -99,18 +100,18 @@ TUM_LIGLER = {
     "🇷🇴 Romanya Liga 1":              "soccer_romania_1_liga",
     "🇺🇦 Ukrayna Premier Liga":        "soccer_ukraine_premier_league",
     "🇷🇸 Sırbistan Super Liga":        "soccer_serbia_superliga",
-    # ─ Avrupa Kupaları ─
+    # - Avrupa Kupaları -
     "🏆 UEFA Şampiyonlar Ligi":        "soccer_champions_league",
     "🏆 UEFA Avrupa Ligi":             "soccer_europa_league",
     "🏆 UEFA Konferans Ligi":          "soccer_europa_conference_league",
-    # ─ Amerika ─
+    # - Amerika -
     "🇺🇸 ABD MLS":                     "soccer_usa_mls",
     "🇧🇷 Brezilya Série A":            "soccer_brazil_campeonato",
     "🇦🇷 Arjantin Primera":            "soccer_argentina_primera_division",
     "🇲🇽 Meksika Liga MX":             "soccer_mexico_ligamx",
     "🇨🇱 Şili Primera":                "soccer_chile_primera_division",
     "🇨🇴 Kolombiya Primera A":         "soccer_colombia_primera_a",
-    # ─ Asya / Diğer ─
+    # - Asya / Diğer -
     "🇯🇵 Japonya J1 League":           "soccer_japan_j_league",
     "🇰🇷 Güney Kore K League 1":       "soccer_korea_kleague1",
     "🇨🇳 Çin Super League":            "soccer_china_superleague",
@@ -163,7 +164,7 @@ LIG_MAP = {
     "soccer_australia_aleague":             (188, 2024),
 }
 
-# ── API-FOOTBALL FONKSİYONLARI ────────────────────────────────────────────────
+# - API-FOOTBALL FONKSİYONLARI -
 
 def _fb_get(endpoint, params, timeout=10):
     """Tek nokta API çağrısı — hata durumunda (status, json) döner"""
@@ -298,7 +299,7 @@ def get_last5_form(team_id, league_id, season):
             continue
     return form
 
-# ── YARDIMCI ─────────────────────────────────────────────────────────────────
+# - YARDIMCI -
 def sv(v, iyi, orta, ters=False):
     if v is None: return "sv-na"
     return ("sv-iyi" if v<=iyi else ("sv-orta" if v<=orta else "sv-kotu")) if ters else \
@@ -363,7 +364,7 @@ def istatistik_html(ev, dep, league_id, season):
   <div style='font-size:.7rem;color:#555d75;margin-top:4px'>✅ Kaynak: api-football v3 · 🔄 Cache: 1 saat</div>
 </div>"""
 
-# ── MARKET ETİKETİ ────────────────────────────────────────────────────────────
+# - MARKET ETİKETİ -
 def market_etiket(mkt_key, out_name, point=None):
     if mkt_key == "h2h":
         return ("1" if out_name.endswith("(Home)") or out_name == out_name else out_name), "Maç Sonu"
@@ -388,7 +389,7 @@ MARKET_RENK = {
     "Handikap": "#00cec9",
 }
 
-# ── SOL PANEL ─────────────────────────────────────────────────────────────────
+# - SOL PANEL -
 # Varsayılan değerler — sidebar render olmadan önce NameError engellemek için
 tutar    = 100
 target_o = 1.44
@@ -430,14 +431,14 @@ with st.sidebar:
     else:
         st.info("Henüz maç eklenmedi.")
 
-# ── BAŞLIK ────────────────────────────────────────────────────────────────────
+# - BAŞLIK -
 st.title("⚡ Superior Scout v33")
 st.caption(f"Hedef oran: **{target_o:.2f}** · Tutar: **{tutar} TL**")
 
-if ODDS_API_KEY == "SENİN_ODDS_API_ANAHTARIN":
+if ODDS_API_KEY == "YOUR_ODDS_API_KEY_HERE":
     st.error("⚠️ Odds API anahtarı girilmemiş! Dosyanın 7. satırındaki ODDS_API_KEY değişkenine the-odds-api.com anahtarını gir.")
 
-# ── ANALİZ MOTORU ─────────────────────────────────────────────────────────────
+# - ANALİZ MOTORU -
 def analiz_motoru(secili_lig_keys: list, gun_aralik: int, secili_marketler: list):
     if not secili_lig_keys:
         st.warning("Lütfen en az bir lig seçin.")
@@ -471,7 +472,7 @@ def analiz_motoru(secili_lig_keys: list, gun_aralik: int, secili_marketler: list
         prog.progress((i+1)/len(secili_lig_keys),
                       text=f"⏳ {lig_key.replace('soccer_','').replace('_',' ').title()} ({i+1}/{len(secili_lig_keys)})")
 
-        # ── 1. Temel market isteği (h2h + totals) ────────────────────────────
+        # - 1. Temel market isteği (h2h + totals) -
         def fetch_market(lig, mkts):
             url = (f"https://api.the-odds-api.com/v4/sports/{lig}/odds/"
                    f"?apiKey={ODDS_API_KEY}&regions=eu"
@@ -491,7 +492,7 @@ def analiz_motoru(secili_lig_keys: list, gun_aralik: int, secili_marketler: list
 
         maclar = fetch_market(lig_key, temel_markets)
 
-        # ── 2. Korner marketi — ayrı istek ───────────────────────────────────
+        # - 2. Korner marketi — ayrı istek -
         korner_maclar = []
         if korner_istendi:
             # The Odds API'de korner: "alternate_totals" veya "team_totals"
@@ -563,7 +564,7 @@ def analiz_motoru(secili_lig_keys: list, gun_aralik: int, secili_marketler: list
         st.error(f"""❌ Hiç fırsat bulunamadı.
         
 **Olası sebepler:**
-- Odds API anahtarın `SENİN_ODDS_API_ANAHTARIN` olarak kalmış — gerçek anahtarı gir
+- Odds API anahtarın `YOUR_ODDS_API_KEY_HERE` olarak kalmış — gerçek anahtarı gir
 - Seçilen {len(secili_lig_keys)} ligde şu an aktif maç yok
 - Oran kriteri ({alt_l:.2f}–{ust_l:.2f}) bu liglere uymuyor
 - Tarama yapılan {gun_aralik} günde maç programlanmamış
@@ -651,12 +652,12 @@ def analiz_motoru(secili_lig_keys: list, gun_aralik: int, secili_marketler: list
 
         st.markdown("<hr style='border-color:#1e2235;margin:3px 0 10px'>", unsafe_allow_html=True)
 
-# ── SEKMELER ──────────────────────────────────────────────────────────────────
+# - SEKMELER -
 tab1, tab2 = st.tabs(["🔍 Analiz", "📂 Arşiv"])
 
 with tab1:
 
-    # ── ZAMAN FİLTRESİ ────────────────────────────────────────────────────────
+    # - ZAMAN FİLTRESİ -
     st.markdown("### ⏱️ Zaman Aralığı")
     gun_secim = st.radio(
         "", ["Bugün", "Yarın", "2 Gün", "3 Gün"],
@@ -666,7 +667,7 @@ with tab1:
     gun_map = {"Bugün": 1, "Yarın": 2, "2 Gün": 2, "3 Gün": 3}
     gun_aralik = gun_map[gun_secim]
 
-    # ── MARKET SEÇİMİ ─────────────────────────────────────────────────────────
+    # - MARKET SEÇİMİ -
     st.markdown("### 🎯 Bahis Türü")
     market_cols = st.columns(4)
     sec_mac_sonu = market_cols[0].checkbox("⚽ Maç Sonu",  value=True)
@@ -681,7 +682,7 @@ with tab1:
     if sec_kart:     secili_marketler.append("Kart")
     if not secili_marketler: secili_marketler = ["Maç Sonu"]
 
-    # ── LİG SEÇİCİ ───────────────────────────────────────────────────────────
+    # - LİG SEÇİCİ -
     st.markdown("### 🏆 Lig Seçimi")
 
     col_hepsi, col_temizle, _ = st.columns([1, 1, 4])
@@ -739,7 +740,7 @@ with tab1:
     st.markdown(f"**{len(secili_lig_keys)}** lig seçili")
     st.divider()
 
-    # ── TARA BUTONU ───────────────────────────────────────────────────────────
+    # - TARA BUTONU -
     if st.button("🔍 FIRSAT TAR", use_container_width=True, type="primary"):
         analiz_motoru(secili_lig_keys, gun_aralik, secili_marketler)
 
@@ -755,5 +756,3 @@ with tab2:
                 if cb.button("❌ Kaybetti", key=f"kay_{idx}"): st.session_state.arsiv[idx]['durum']="Kaybetti"; st.rerun()
     else:
         st.info("Henüz kaydedilmiş kupon yok.")
-
-
