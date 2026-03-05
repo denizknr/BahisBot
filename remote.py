@@ -1,25 +1,59 @@
+import streamlit as st
 import requests
+import pandas as pd
 
-class BettingBot:
-    def __init__(self, budget, target_profit, match_count, sports=['soccer', 'basketball']):
-        self.budget = budget
-        self.target_profit = target_profit
-        self.match_count = match_count
-        self.api_key = "YOUR_API_KEY"
-        
-    def get_global_odds(self):
-        # The Odds API üzerinden global oranları çeker
-        url = f"https://api.the-odds-api.com/v4/sports/upcoming/odds/?regions=eu&apiKey={self.api_key}"
-        # ... veri çekme işlemleri ...
-        return odds_data
+# API anahtarını buraya tırnak içine yaz
+API_KEY = "BURAYA_API_ANAHTARINI_YAPISTIR"
 
-    def create_automation_slip(self):
-        # 1. Maçları ve oranları filtrele
-        # 2. Toplam Oran = Kazanılacak / Yatırılacak
-        required_total_odds = self.target_profit / self.budget
+st.set_page_config(page_title="Bet Strategy Bot", page_icon="⚽")
+
+st.title("⚽🏀 Global Bahis Strateji Paneli")
+
+# Kullanıcı Arayüzü
+with st.sidebar:
+    st.header("Kriterler")
+    tutar = st.number_input("Yatırılacak Tutar (TL)", value=100)
+    hedef = st.number_input("Hedeflenen Kazanç (TL)", value=500)
+    mac_sayisi = st.slider("Maç Sayısı", 1, 5, 3)
+    
+    spor_secimi = st.selectbox("Spor Dalı", 
+                               options=["soccer_epl", "basketball_nba"], 
+                               format_func=lambda x: "İngiltere Premier Lig" if "soccer" in x else "NBA")
+
+if st.button("Sanal Kupon Oluştur"):
+    if API_KEY == "BURAYA_API_ANAHTARINI_YAPISTIR":
+        st.error("Lütfen önce The Odds API üzerinden aldığınız anahtarı koda ekleyin!")
+    else:
+        url = f"https://api.the-odds-api.com/v4/sports/{spor_secimi}/odds/?apiKey={API_KEY}&regions=eu&markets=h2h"
+        res = requests.get(url)
         
-        # 3. Maç sayısı bazında ortalama oran hesabı
-        avg_odds_per_match = required_total_odds ** (1 / self.match_count)
-        
-        print(f"PKS Analizi: Hedef oran maç başı {avg_odds_per_match:.2f} olmalı.")
-        # Bu oran aralığına en yakın 'Value' maçları seçer
+        if res.status_code == 200:
+            data = res.json()
+            gereken_oran = hedef / tutar
+            ideal_mac_orani = gereken_oran ** (1/mac_sayisi)
+            
+            st.info(f"Hedeflenen toplam oran: {gereken_oran:.2f} | Maç başı ortalama: {ideal_mac_orani:.2f}")
+            
+            # Maç eşleştirme algoritması
+            secilen_maclar = []
+            for m in data:
+                home = m['home_team']
+                away = m['away_team']
+                # İlk büronun (genellikle Bet365 veya Pinnacle) oranlarını al
+                try:
+                    outcomes = m['bookmakers'][0]['markets'][0]['outcomes']
+                    for o in outcomes:
+                        if (ideal_mac_orani - 0.3) <= o['price'] <= (ideal_mac_orani + 0.3):
+                            secilen_maclar.append({"Maç": f"{home} - {away}", "Tahmin": o['name'], "Oran": o['price']})
+                            break # Her maçtan sadece bir tahmin al
+                except:
+                    continue
+                if len(secilen_maclar) == mac_sayisi: break
+
+            if len(secilen_maclar) == mac_sayisi:
+                st.success("Kriterlere uygun kupon hazır!")
+                st.table(pd.DataFrame(secilen_maclar))
+            else:
+                st.warning("Bu kriterlerde yeterli maç bulunamadı. Hedef kazancı düşürmeyi deneyin.")
+        else:
+            st.error("Veri çekilemedi. API anahtarınızı veya limitinizi kontrol edin.")
